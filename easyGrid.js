@@ -1,6 +1,9 @@
 let treeGridEDPath = "../js/treegrid/GridED.js"
 let treeGridEPath = "../js/treegrid/GridE.js"
 
+// let treeGridEDPath = "/sys/js/treegrid/GridED.js"
+// let treeGridEPath = "/sys/js/treegrid/GridE.js"
+
 
 document.write(`<script src=${treeGridEDPath}></script>`);
 document.write(`<script src=${treeGridEPath}></script>`);
@@ -16,6 +19,12 @@ class easyGrid {
     #fullUrl;
     #requestParam;
     #layout;
+    #uploadUrl;
+    #uploadData;
+    #uploadFormat;
+    #uploadFlags;
+    #exportData;
+    #exportUrl;
     #grid;
     #gridId;
 
@@ -25,22 +34,49 @@ class easyGrid {
      * @param {string} url - request url
      * @param {string} layout - layout file
      * @param {{}} requestParam -  request param
+     * @param uploadData
+     * @param uploadFormat
+     * @param uploadUrl
+     * @param uploadFlags
+     * @param exportData
+     * @param exportUrl
      */
-    constructor(domId, url, layout, requestParam = {}) {
+    constructor(domId, url, layout, requestParam = {}, uploadUrl = "", uploadData = "", uploadFormat = "", uploadFlags = "", exportData = "", exportUrl = "") {
         this.#domId = domId;
         this.#url = url;
         this.#fullUrl = url;
+
         this.#fullUrl += this.#editGetMethodParam(requestParam);
         this.#requestParam = requestParam
         this.#layout = layout;
+
+        this.#uploadUrl = uploadUrl
+        this.#uploadData = uploadData
+        this.#uploadFormat = uploadFormat
+        this.#uploadUrl = uploadUrl
+        this.#uploadFlags = uploadFlags
+        this.#exportData = exportData
+        this.#exportUrl = exportUrl
+
         this.#grid = TreeGrid({
+            Debug: [""],
             Data: {
                 Url: this.#fullUrl
             },
             Layout: {
                 Url: this.#layout
             },
-            Sync: 1
+            Upload: {
+                Url: this.#uploadUrl,
+                Data: this.#uploadData,
+                Format: this.#uploadFormat,
+                Flag: this.#uploadFlags,
+            },
+            Export: {
+                Url: this.#exportUrl,
+                Data: this.#exportData,
+            },
+            id: this.#domId
         }, this.#domId);
         this.#gridId = this.#grid.id
     }
@@ -63,7 +99,6 @@ class easyGrid {
      */
 
     getGridColNames() {
-        console.log(this.#grid.GetCols("Visible"));
         let cols = this.#grid.GetCols();
         let colName = [];
         for (let colsKey in cols) {
@@ -84,6 +119,56 @@ class easyGrid {
         return this.#grid.GetString(row, col)
     }
 
+    getGridData() {
+        return new Promise((resolve, reject) => {
+            Grids.OnReady = (grid) => {
+                const result = [];
+                for (let row = grid.GetFirst(); row; row = grid.GetNext(row)) {
+                    const rowData = {};
+                    const keys = Object.keys(row);
+                    keys.forEach(key => {
+                        rowData[key] = row[key];
+                    });
+                    result.push(rowData);
+                }
+                resolve(result);
+            }
+            this.reload();
+            const grid = this.getGrid();
+            if (!grid) {
+                reject(new Error("Grid not found"));
+            }
+        });
+    }
+
+    getMountedGridData() {
+        const result = [];
+        for (let row = Grids[this.#gridId].GetFirst(); row; row = Grids[this.#gridId].GetNext(row)) {
+            const rowData = {};
+            const keys = Object.keys(row);
+            keys.forEach(key => {
+                if (typeof  row[key] === 'object') {
+                    return;
+                }
+                rowData[key] = row[key];
+            });
+            result.push(rowData)
+        }
+
+        return result;
+    }
+
+    getChangeGridData() {
+        const result = [];
+        let data = this.getMountedGridData();
+        data.forEach(x => {
+            if ((x.hasOwnProperty('Changed') && x['Changed'] === 1)||(x.hasOwnProperty('Deleted') && x['Deleted'] === true)) {
+                result.push(x)
+            }
+        })
+        return result;
+    }
+
 
     /**
      * @desc get Current Row Value
@@ -102,7 +187,6 @@ class easyGrid {
 
     clear() {
         this.#grid.Clear();
-
     }
 
 
@@ -111,12 +195,14 @@ class easyGrid {
      * @method get
      * @param {string} url - request url
      * @param {{}} requestParam - request data
+     * @param {{}} method - request method  [GET OR POST]
      */
-    request(url, requestParam = {},) {
+    request(url, requestParam = {}, method = 'GET') {
         this.#url = url;
         this.#requestParam = requestParam;
         this.#fullUrl = url + this.#editGetMethodParam(requestParam);
         this.getGridSource().Data.Url = this.#fullUrl;
+        this.getGridSource().Data.Method = method;
         this.reload();
     }
 
@@ -126,14 +212,11 @@ class easyGrid {
      */
 
     #editGetMethodParam(requestParam) {
-        let paramUrl = '';
-        for (let paramKey in requestParam) {
-            paramUrl += `&${paramKey}=${requestParam[paramKey]}`;
+        if (!requestParam || typeof requestParam !== 'object') {
+            throw new Error('questParam은 객체 또는 유효한 URLSearchParams 이어야 합니다.');
         }
-        if (paramUrl.length === 0) {
-            return ""
-        }
-        return "?" + paramUrl.slice(1);
+        const params = new URLSearchParams(requestParam).toString();
+        return "?" + params;
     }
 
 
@@ -176,5 +259,15 @@ class easyGrid {
     setRequestParam(param) {
         this.#requestParam = param;
         this.#fullUrl = this.#url + this.#editGetMethodParam(this.#requestParam);
+    }
+
+    addRow(isLast = true) {
+        if (isLast) {
+            Grids[this.#gridId].AddRow(null, null, true);
+        } else {
+            Grids[this.#gridId].AddRow(null, Grids[this.#gridId].GetFirst(), true);
+        }
+
+
     }
 }
